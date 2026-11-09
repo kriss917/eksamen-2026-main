@@ -17,3 +17,7 @@ output "ingress_paths" {
 output "service_url" {
   value = aws_ecs_express_gateway_service.wishifai.ingress_paths[0].endpoint
 }
+
+output "dashboard_name" {
+  value = aws_cloudwatch_dashboard.wishifai.dashboard_name
+}
