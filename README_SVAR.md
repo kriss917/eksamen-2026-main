@@ -54,6 +54,19 @@ Metrikker jeg la til:
  - wishifai.gifts.suggested (Counter): antall gaveforslag generert. Business-metrikk.
  - wishifai.bedrock.parse.failures (Counter): antall ganger modellsvaret ikke kunne tolkes som JSON.
 Hvorfor:
- - Rekognition og Bedrock er de to eksterne kallene, og da de mest sannsynlige årsakene til treg respons. Jeg måler bare selve AWS-kallet, slik at tallene viser hvor tiden går.
+ - Rekognition og Bedrock er de to eksterne kallene, og dermed de mest sannsynlige årsakene til treg respons. Jeg måler bare selve AWS-kallet, slik at tallene viser hvor tiden går.
  - Business-metrikkene viser bruk (bilder) og levert verdi (forslag). Forslag per bilde sier også noe om kvaliteten på prompten.
  - parse.failures fanger en stille feil: "parseAnalysis" returnerer "(ukjent)" når modellen ikke svarer med gyldig JSON, og da reagerer ingen tekniske feilmetrikker.
+
+Oppgave 3B
+Dashboard: wishifai-10 (CloudWatch), er i infra/monitoring.tf. Screenshot ligger i media mappen -> media/dashboard.png.
+Metrikker i dashboardet:
+ - Business: "wishifai.images.analyzed.count" og "wishifai.gifts.suggested.count". Viser bruk og levert verdi.
+ - Tid per kall: "wishifai.bedrock.duration.avg" og "wishifai.rekognition.duration.avg" side om side. Viser at Bedrock bruker rundt 15 sekunder mot rundt 0,7 sekunder for Rekognition, så den trege responsen skyldes språkmodellen.
+ - Bedrock-parsing: wishifai.bedrock.parse.failures.count hvis alarmen går vil det dukke opp her, så kan jeg se om det er en feil eller flere som trigget alarmen.
+ - Infrastruktur (ECS): CPUUtilization, MemoryUtilization og LiveTaskCount. Viser at flaskehalsen ikke er maskinressurser: CPU og minne er lavt mens responstiden er høy.
+ - Applikasjon (Actuator): http.server.requests.avg/max for POST /api/analyze og jvm.memory.used.value for heap. HTTP-latensen bekrefter totaltiden brukeren ser, og JVM-heap viser at appen ikke har minneproblemer.
+Alarm: wishifai-10-bedrock-parse-failures
+ - Går når minst ett Bedrock-svar i løpet av 5 minutter ikke kunne tolkes som JSON
+ - Hvorfor: da returnerer appen "(ukjent)" til brukeren mens HTTP-status, latens og feilrate ser friske ut. Ingen tekniske metrikker fanger det.
+ - treat_missing_data = notBreaching, så perioder uten trafikk ikke gir falsk alarm.
