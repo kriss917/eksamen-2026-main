@@ -1,3 +1,5 @@
+## Kandidatnummer er 10
+
 ## Oppgave 1A
 
 Build og kjøre: 
