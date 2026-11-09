@@ -43,6 +43,17 @@ Ved endringer i tf filer kjør "terraform fmt -recursive" så er formateringen p
 Hvorfor terraform etter build:
 Terraform refererer til et image med en bestemt tag i ECR, som ikke finnes før build har pushet imaget. Hvis terraform kjørte før eller samtidig kunne ECS prøvd å hente et image som ikke finnes enda, og deploy ville feilet eller startet med et gammelt image. needs: build_and_push gjør at den kun kjøres hvis buildet var vellykket.
 
-
-
- 
+Oppgave 3A
+Metrikker sendes til CloudWatch med Micrometer, namespace "wishifai-10".
+Rettet feil i MetricsConfig:
+ - "namespace()" returnerte tom streng, så CloudWatch avviste alle metrikker ("The parameter Namespace is required"). Satt den til "wishifai-10".
+Metrikker jeg la til:
+ - wishifai.rekognition.duration (Timer): tid for Rekognition-kallet.
+ - wishifai.bedrock.duration (Timer): tid for Bedrock-kallet.
+ - wishifai.images.analyzed (Counter): antall analyserte bilder. Business-metrikk.
+ - wishifai.gifts.suggested (Counter): antall gaveforslag generert. Business-metrikk.
+ - wishifai.bedrock.parse.failures (Counter): antall ganger modellsvaret ikke kunne tolkes som JSON.
+Hvorfor:
+ - Rekognition og Bedrock er de to eksterne kallene, og da de mest sannsynlige årsakene til treg respons. Jeg måler bare selve AWS-kallet, slik at tallene viser hvor tiden går.
+ - Business-metrikkene viser bruk (bilder) og levert verdi (forslag). Forslag per bilde sier også noe om kvaliteten på prompten.
+ - parse.failures fanger en stille feil: "parseAnalysis" returnerer "(ukjent)" når modellen ikke svarer med gyldig JSON, og da reagerer ingen tekniske feilmetrikker.
