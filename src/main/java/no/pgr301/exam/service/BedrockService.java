@@ -14,9 +14,6 @@ import software.amazon.awssdk.services.bedrockruntime.model.Message;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Timer;
 
 import java.util.List;
 import java.util.regex.Matcher;

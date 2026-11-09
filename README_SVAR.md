@@ -1,11 +1,13 @@
-Oppgave 1A
+## Oppgave 1A
+
 Build og kjøre: 
 docker build -t wishifai .
 docker run -p 9999:8080 -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY wishifai
 Krever da AWS-keys satt i terminal
 Det blir multi-stage fordi vi har to FROM i Dockerfile ... Der den ene bygger hele greia, JAR-filen, maven og JDK, mens den andre bare bruker JAR-filen som resulterer i et image som tar mindre plass siden build tools ikke blir med. -p 9999:8080 kobler 9999 på maskinen til 8080 i containeren som gjør at localhost:9999 svarer.
 
-Oppgave 1B
+## Oppgave 1B
+
 Grønn kjøring: 
  - https://github.com/kriss917/eksamen-2026-main/actions/runs/41628522441
 Tagging strategi:
@@ -13,7 +15,8 @@ Imaget får to tagger -> full commit-SHA og latest
  - SHA gjør hvert image unikt og sporbart, så man vet nøyaktig hvilken kode som kjører og kan rulle tilbake til en bestemt versjon.
  - Latest er bare en praktisk peker til det siste bygget, og vil flytte seg for hvert bygg, så kan ikke brukes alene til å se hva som kjøres.
 
-Oppgave 2A
+## Oppgave 2A
+
 All terraform kode ligger i infra/
 Offentlig URL: https://wi-b503ad24c6c24e6a8ed8d06391673903.ecs.eu-west-1.on.aws
 Test med:
@@ -30,20 +33,23 @@ S3_BUCKET: settes i terraform automatisk fra "aws_s3_bucket.images.bucket"
 Jeg har variabler for region, candidate_number og image_tag som foreslås i oppgaven pluss ecr_repository og rollene som er ferdige.
 Jeg har outputs for service_url, bucket_name, task_role_arn, service_arn og ingress_paths.
 
-Oppgave 2B
+## Oppgave 2B
+
 Backend config ligger i "providers.tf" og pekker på pgr301-terraform-state som det står i oppgaven, og jeg bruker filnavn med mitt kandidat nummer -> key = "wishifai/10/terraform.tfstate" 
 
-Oppgave 2C
-Grønn kjøring:
- - https://github.com/kriss917/eksamen-2026-main/actions/runs/42222226874
-Den feiler ved formateringsfeil siden jeg har "run: terraform fmt -check -recursive"
-Rød kjøring grunnet formatering:
- - https://github.com/kriss917/eksamen-2026-main/actions/runs/42221680367
+## Oppgave 2C
+
+ - Grønn kjøring:
+https://github.com/kriss917/eksamen-2026-main/actions/runs/42222226874
+ - Rød kjøring grunnet formatering:
+https://github.com/kriss917/eksamen-2026-main/actions/runs/42221680367
+Den feiler ved formateringsfeil siden jeg har "run: terraform fmt -check -recursive".
 Ved endringer i tf filer kjør "terraform fmt -recursive" så er formateringen på plass.
 Hvorfor terraform etter build:
 Terraform refererer til et image med en bestemt tag i ECR, som ikke finnes før build har pushet imaget. Hvis terraform kjørte før eller samtidig kunne ECS prøvd å hente et image som ikke finnes enda, og deploy ville feilet eller startet med et gammelt image. needs: build_and_push gjør at den kun kjøres hvis buildet var vellykket.
 
-Oppgave 3A
+## Oppgave 3A
+
 Metrikker sendes til CloudWatch med Micrometer, namespace "wishifai-10".
 Rettet feil i MetricsConfig:
  - "namespace()" returnerte tom streng, så CloudWatch avviste alle metrikker ("The parameter Namespace is required"). Satt den til "wishifai-10".
@@ -58,7 +64,8 @@ Hvorfor:
  - Business-metrikkene viser bruk (bilder) og levert verdi (forslag). Forslag per bilde sier også noe om kvaliteten på prompten.
  - parse.failures fanger en stille feil: "parseAnalysis" returnerer "(ukjent)" når modellen ikke svarer med gyldig JSON, og da reagerer ingen tekniske feilmetrikker.
 
-Oppgave 3B
+## Oppgave 3B
+
 Dashboard: wishifai-10 (CloudWatch), er i infra/monitoring.tf. Screenshot ligger i media mappen -> media/dashboard.png.
 Metrikker i dashboardet:
  - Business: "wishifai.images.analyzed.count" og "wishifai.gifts.suggested.count". Viser bruk og levert verdi.
@@ -70,3 +77,15 @@ Alarm: wishifai-10-bedrock-parse-failures
  - Går når minst ett Bedrock-svar i løpet av 5 minutter ikke kunne tolkes som JSON
  - Hvorfor: da returnerer appen "(ukjent)" til brukeren mens HTTP-status, latens og feilrate ser friske ut. Ingen tekniske metrikker fanger det.
  - treat_missing_data = notBreaching, så perioder uten trafikk ikke gir falsk alarm.
+
+## Oppgave 4
+
+Generativ AI er ikke deterministisk. Alt teknisk kan fungere, og modellen kan gi gode resultater en stund før den plutselig gir et upassende svar. I Wishifai skal det litt til før det går galt, siden det bare er gaveforslag, men i mange andre applikasjoner kan det få store konsekvenser. Hvor strengt applikasjonen testes og overvåkes, avhenger derfor av hva en feil kan koste.
+
+Testing. Vanlige tester forventer samme svar hver gang, og det får man ikke fra en LLM. Samme bilde kan gi ulike gaveforslag fra gang til gang. Det jeg likevel kan teste vanlig, er koden rundt: at labels fra Rekognition blir til en fornuftig prompt, og at "parseAnalysis" takler både gyldig JSON og søppel, med Bedrock mocket. For selve svarene ville jeg laget et eval-sett: en liten samling bilder jeg kjører gjennom tjenesten hver gang noe endres, og sjekker at svarene følger reglene våre. For eksempel gyldig JSON, ikke mer enn fem forslag, ingen generiske gaver som «en bok», og ikke alkohol til et barnerom. En annen LLM kan også vurdere om gavene passer, men et menneske må stikkprøvekontrollere resultatet. Eval-settet kan kjøre i pipelinen før deploy.
+
+Kontinuerlig leveranse. Prompten ligger i "BedrockService", og modell-ID-en ligger i konfigurasjon. Det betyr at oppførselen kan endre seg uten at resten av koden gjør det. Derfor må prompt og modell behandles som kode: i git, gjennom pipelinen og med image tagget med commit-SHA, slik at jeg kan rulle tilbake hvis noe blir verre. For gaver er det greit å rulle ut rett. Når konsekvensene er større, bør man slippe ut til en liten andel brukere først (canary) eller bruke feature flag, og sammenligne kvaliteten før alle får den nye versjonen.
+
+Overvåking. Dashboardet mitt viser at Bedrock bruker rundt 15 sekunder mens Rekognition bruker under ett sekund, så latens er et reelt problem. Alarmen min går på "bedrock.parse.failures", fordi den fanger en feil som ellers er usynlig: appen svarer 200, men brukeren får «(ukjent)». Den fanger ikke det verste, nemlig et svar som er gyldig JSON, men upassende, som en skarp kniv til et barnerom. Det er vanskeligere å oppdage uten for eksempel tilbakemeldinger fra brukere.
+
+Risikonivå. Hos meg er det verste som kan skje at noen får en dårlig gaveidé, så det går greit å oppdage først i produksjon. Hadde det vært en bank eller medisinsk rådgivning, ville jeg ikke latt modellen svare uten at et menneske leser rådet først, og endringer i prompt eller modell måtte godkjennes av noen før de gikk ut i produksjon.
