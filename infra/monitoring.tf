@@ -157,7 +157,7 @@ resource "aws_cloudwatch_metric_alarm" "bedrock_slow" {
   statistic           = "Average"
   period              = 300
   evaluation_periods  = 1
-  threshold           = 20
+  threshold           = 20000
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
 }
