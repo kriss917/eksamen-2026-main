@@ -77,7 +77,7 @@ curl -F "image=@samples/sample_image.png" https://wi-b503ad24c6c24e6a8ed8d063916
 
 - **s3**: `PutObject`, `GetObject`, `ListBucket` -> skrive, lese og liste fra min bucket.
 - **Rekognition**: `DetectLabels` -> Be om labels fra et bilde.
-- **Bedrock**: `InvokeModel` -> sende prompt til model og `InvokeModelWithResponseStream` -> sende prompt til modellen og få respons i en stream.
+- **Bedrock**: `InvokeModel` -> sende prompt til modellen og `InvokeModelWithResponseStream` -> sende prompt til modellen og få respons i en stream.
 - **CloudWatch**: `PutMetricData` -> sender metrikken fra Micrometer.
 
 Bedrock og CloudWatch er ikke begrenset til bestemte ressurser, og kunne(burde) vært strammet in, men har prioritert at det faktisk funker.
@@ -134,7 +134,7 @@ Metrikker sendes til CloudWatch med Micrometer under namespace `wishifai-10`.
 
 - **Timere rundt Rekognition og Bedrock:** De to eksterne kallene er de mest sannsynlige årsakene til treg respons. Jeg måler bare selve AWS-kallet, slik at tallene viser hvor tiden går.
 - **Business-metrikker:** `images.analyzed` viser bruk, og `gifts.suggested` viser levert verdi.
-- **`parse.failures`:** Den fanger en feil som ellers er usynlig. Når modellen ikke svarer med gyldig JSON,returnerer `parseAnalysis` fallback-verdien `(ukjent)`, og brukeren får et svar uten at HTTP-status eller feilrate ser noe galt.
+- **`parse.failures`:** Den fanger en feil som ellers er usynlig. Når modellen ikke svarer med gyldig JSON, returnerer `parseAnalysis` fallback-verdien `(ukjent)`, og brukeren får et svar uten at HTTP-status eller feilrate ser noe galt.
 
 ### Kjent feil
 
@@ -142,26 +142,38 @@ En respons som ikke er JSON feiler inne i `parseAnalysis`. Kommer det en tom res
 
 ## Oppgave 3B
 
-Dashboard: wishifai-10 (CloudWatch), er i infra/monitoring.tf. Screenshot ligger i media mappen -> media/dashboard.png.
-Metrikker i dashboardet:
- - Business: "wishifai.images.analyzed.count" og "wishifai.gifts.suggested.count". Viser bruk og levert verdi.
- - Tid per kall: "wishifai.bedrock.duration.avg" og "wishifai.rekognition.duration.avg" side om side. Viser at Bedrock bruker rundt 15 sekunder mot rundt 0,7 sekunder for Rekognition, så den trege responsen skyldes språkmodellen.
- - Bedrock-parsing: wishifai.bedrock.parse.failures.count hvis alarmen går vil det dukke opp her, så kan jeg se om det er en feil eller flere som trigget alarmen.
- - Infrastruktur (ECS): CPUUtilization, MemoryUtilization og LiveTaskCount. Viser at flaskehalsen ikke er maskinressurser: CPU og minne er lavt mens responstiden er høy.
- - Applikasjon (Actuator): http.server.requests.avg/max for POST /api/analyze og jvm.memory.used.value for heap. HTTP-latensen bekrefter totaltiden brukeren ser, og JVM-heap viser at appen ikke har minneproblemer.
-Alarm: wishifai-10-bedrock-parse-failures
- - Går når minst ett Bedrock-svar i løpet av 5 minutter ikke kunne tolkes som JSON
- - Hvorfor: da returnerer appen "(ukjent)" til brukeren mens HTTP-status, latens og feilrate ser friske ut. Ingen tekniske metrikker fanger det.
- - treat_missing_data = notBreaching, så perioder uten trafikk ikke gir falsk alarm.
+Dashboard og alarm code ligger i `infra/monitoring.tf`.
+Dashboardet heter wishifai-10 i CloudWatch. Screenshot med data: `media/dashboard.png`.
+
+### Metrikker i dashboardet
+
+- **Business**: `wishifai.images.analyzed.count` og `wishifai.gifts.suggested.count`. Viser bruk og levert verdi.
+- **Tid per kall**: `wishifai.bedrock.duration.avg` og `wishifai.rekognition.duration.avg`. Viser at Bedrock bruker rundt 15 sekunder mot rundt 0,7 sekunder for Rekognition.
+- **Bedrock-parsing**: `wishifai.bedrock.parse.failures.count` viser om modellsvar ikke kan tolkes.
+- **Infrastruktur (ECS)**: `CPUUtilization`, `MemoryUtilization` og `LiveTaskCount`. Viser at flaskehalsen ikke er maskinressurser: CPU og minne er lavt mens responstiden er høy.
+- **Applikasjon (Actuator)**: `http.server.requests.avg/max` for `POST /api/analyze` og `jvm.memory.used.value` for heap. HTTP-latensen bekrefter totaltiden brukeren ser, og JVM-heap viser at appen ikke har minneproblemer.
+
+Konklusjon fra dashboardet: den trege responsen skyldes språkmodellen, ikke maskinressursene.
+
+### Alarm 1: wishifai-10-bedrock-parse-failures
+
+- **Går når:** minst ett Bedrock-svar i løpet av 5 minutter ikke kunne tolkes som JSON.
+- **Hvorfor:** da returnerer appen `(ukjent)` til brukeren, mens HTTP-status og feilrate ser friske ut. Ingen tekniske metrikker fanger det.
+- `treat_missing_data = notBreaching`, så perioder uten trafikk ikke gir falsk alarm.
+
+### Alarm 2: `wishifai-10-bedrock-slow`
+
+- **Går når:** gjennomsnittlig Bedrock-tid over 5 minutter er over 20 000 ms (20 sekunder).
+- **Hvorfor:** treg respons er det opprinnelige problemet, og Bedrock er flaskehalsen. Normalt ligger snittet rundt 15 sekunder, så terskelen på 20 sekunder fanger en tydelig forverring uten å gå av ved normal drift.
 
 ## Oppgave 4
 
 Generativ AI er ikke deterministisk. Alt teknisk kan fungere, og modellen kan gi gode resultater en stund før den plutselig gir et upassende svar. I Wishifai skal det litt til før det går galt, siden det bare er gaveforslag, men i mange andre applikasjoner kan det få store konsekvenser. Hvor strengt applikasjonen testes og overvåkes, avhenger derfor av hva en feil kan koste.
 
-Testing. Vanlige tester forventer samme svar hver gang, og det får man ikke fra en LLM. Samme bilde kan gi ulike gaveforslag fra gang til gang. Det jeg likevel kan teste vanlig, er koden rundt: at labels fra Rekognition blir til en fornuftig prompt, og at "parseAnalysis" takler både gyldig JSON og søppel, med Bedrock mocket. For selve svarene ville jeg laget et eval-sett: en liten samling bilder jeg kjører gjennom tjenesten hver gang noe endres, og sjekker at svarene følger reglene våre. For eksempel gyldig JSON, ikke mer enn fem forslag, ingen generiske gaver som «en bok», og ikke alkohol til et barnerom. En annen LLM kan også vurdere om gavene passer, men et menneske må stikkprøvekontrollere resultatet. Eval-settet kan kjøre i pipelinen før deploy.
+**Testing**. Vanlige tester forventer samme svar hver gang, og det får man ikke fra en LLM. Samme bilde kan gi ulike gaveforslag fra gang til gang. Det jeg likevel kan teste vanlig, er koden rundt: at labels fra Rekognition blir til en fornuftig prompt, og at "parseAnalysis" takler både gyldig JSON og søppel, med Bedrock mocket. For selve svarene ville jeg laget et eval-sett: en liten samling bilder jeg kjører gjennom tjenesten hver gang noe endres, og sjekker at svarene følger reglene våre. For eksempel gyldig JSON, ikke mer enn fem forslag, ingen generiske gaver som «en bok», og ikke alkohol til et barnerom. En annen LLM kan også vurdere om gavene passer, men et menneske må stikkprøvekontrollere resultatet. Eval-settet kan kjøre i pipelinen før deploy.
 
-Kontinuerlig leveranse. Prompten ligger i "BedrockService", og modell-ID-en ligger i konfigurasjon. Det betyr at oppførselen kan endre seg uten at resten av koden gjør det. Derfor må prompt og modell behandles som kode: i git, gjennom pipelinen og med image tagget med commit-SHA, slik at jeg kan rulle tilbake hvis noe blir verre. For gaver er det greit å rulle ut rett. Når konsekvensene er større, bør man slippe ut til en liten andel brukere først (canary) eller bruke feature flag, og sammenligne kvaliteten før alle får den nye versjonen.
+**Kontinuerlig leveranse**. Prompten ligger i "BedrockService", og modell-ID-en ligger i konfigurasjon. Det betyr at oppførselen kan endre seg uten at resten av koden gjør det. Derfor må prompt og modell behandles som kode: i git, gjennom pipelinen og med image tagget med commit-SHA, slik at jeg kan rulle tilbake hvis noe blir verre. For gaver er det greit å rulle ut rett. Når konsekvensene er større, bør man slippe ut til en liten andel brukere først (canary) eller bruke feature flag, og sammenligne kvaliteten før alle får den nye versjonen.
 
-Overvåking. Dashboardet mitt viser at Bedrock bruker rundt 15 sekunder mens Rekognition bruker under ett sekund, så latens er et reelt problem. Alarmen min går på "bedrock.parse.failures", fordi den fanger en feil som ellers er usynlig: appen svarer 200, men brukeren får «(ukjent)». Den fanger ikke det verste, nemlig et svar som er gyldig JSON, men upassende, som en skarp kniv til et barnerom. Det er vanskeligere å oppdage uten for eksempel tilbakemeldinger fra brukere.
+**Overvåking**. Dashboardet mitt viser at Bedrock bruker rundt 15 sekunder mens Rekognition bruker under ett sekund, så latens er et reelt problem. Derfor har jeg en alarm på `bedrock.duration.avg` som går hvis snittet over fem minutter overstiger 20 sekunder. Den andre alarmen går på `bedrock.parse.failures`, fordi den fanger en feil som ellers er usynlig: appen svarer 200, men brukeren får «(ukjent)». Ingen av alarmene fanger det verste, nemlig et svar som er gyldig JSON, men upassende, som en skarp kniv til et barnerom. Det er vanskelig å oppdage uten for eksempel tilbakemeldinger fra brukere.
 
-Risikonivå. Hos meg er det verste som kan skje at noen får en dårlig gaveidé, så det går greit å oppdage først i produksjon. Hadde det vært en bank eller medisinsk rådgivning, ville jeg ikke latt modellen svare uten at et menneske leser rådet først, og endringer i prompt eller modell måtte godkjennes av noen før de gikk ut i produksjon.
+**Risikonivå**. Hos meg er det verste som kan skje at noen får en dårlig gaveidé, så det går greit å oppdage først i produksjon. Hadde det vært en bank eller medisinsk rådgivning, ville jeg ikke latt modellen svare uten at et menneske leser rådet først, og endringer i prompt eller modell måtte godkjennes av noen før de gikk ut i produksjon.
