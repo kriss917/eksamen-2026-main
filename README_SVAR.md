@@ -117,20 +117,29 @@ Terraform refererer til et image med en bestemt tag i ECR, som ikke finnes før 
 
 ## Oppgave 3A
 
-Metrikker sendes til CloudWatch med Micrometer, namespace "wishifai-10".
-Rettet feil i MetricsConfig:
- - "namespace()" returnerte tom streng, så CloudWatch avviste alle metrikker ("The parameter Namespace is required"). Satt den til "wishifai-10".
-Metrikker jeg la til:
- - wishifai.rekognition.duration (Timer): tid for Rekognition-kallet.
- - wishifai.bedrock.duration (Timer): tid for Bedrock-kallet.
- - wishifai.images.analyzed (Counter): antall analyserte bilder. Business-metrikk.
- - wishifai.gifts.suggested (Counter): antall gaveforslag generert. Business-metrikk.
- - wishifai.bedrock.parse.failures (Counter): antall ganger modellsvaret ikke kunne tolkes som JSON.
-Hvorfor:
- - Rekognition og Bedrock er de to eksterne kallene, og dermed de mest sannsynlige årsakene til treg respons. Jeg måler bare selve AWS-kallet, slik at tallene viser hvor tiden går.
- - Business-metrikkene viser bruk (bilder) og levert verdi (forslag). Forslag per bilde sier også noe om kvaliteten på prompten.
- - parse.failures fanger en stille feil: "parseAnalysis" returnerer "(ukjent)" når modellen ikke svarer med gyldig JSON, og da reagerer ingen tekniske feilmetrikker.
+Metrikker sendes til CloudWatch med Micrometer under namespace `wishifai-10`.
 
+### Rettet feil i MetricsConfig:
+
+`namespace()` returnerte tom streng, så CloudWatch avviste alle metrikker ("The parameter Namespace is required"). Satt den til `wishifai-10`.
+ 
+### Metrikker
+- `wishifai.rekognition.duration` (Timer): tid for Rekognition-kallet.
+- `wishifai.bedrock.duration` (Timer): tid for Bedrock-kallet.
+- `wishifai.images.analyzed` (Counter): antall analyserte bilder. Business-metrikk.
+- `wishifai.gifts.suggested` (Counter): antall gaveforslag generert. Business-metrikk.
+- `wishifai.bedrock.parse.failures` (Counter): antall ganger modellsvaret ikke kunne tolkes som JSON.
+
+### Hvorfor disse metrikkene
+
+- **Timere rundt Rekognition og Bedrock:** De to eksterne kallene er de mest sannsynlige årsakene til treg respons. Jeg måler bare selve AWS-kallet, slik at tallene viser hvor tiden går.
+- **Business-metrikker:** `images.analyzed` viser bruk, og `gifts.suggested` viser levert verdi. Forholdet mellom dem sier også noe om hvor mange forslag hver analyse gir.
+- **`parse.failures`:** Den fanger en feil som ellers er usynlig. Når modellen ikke svarer med gyldig JSON,returnerer `parseAnalysis` fallback-verdien `(ukjent)`, og brukeren får et svar uten at HTTP-status eller feilrate ser noe galt.
+
+### Kjent feil
+
+En respons som ikke er JSON feiler inne i `parseAnalysis`. Kommer det en tom respons derimot feiler vi før, `.content().get(0)` gir en feil som ikke plukkes opp og gir bruker 500 og ingen feil registrert i Cloudwatch.
+ 
 ## Oppgave 3B
 
 Dashboard: wishifai-10 (CloudWatch), er i infra/monitoring.tf. Screenshot ligger i media mappen -> media/dashboard.png.
