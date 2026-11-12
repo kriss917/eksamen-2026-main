@@ -39,7 +39,7 @@ curl -F "image=@samples/sample_image.png" http://localhost:9999/api/analyze
 ### Workflow
 
 Kjører kun på push til `main`.
-AWS-nøkkler ligger i Github secrets.
+AWS-nøkler ligger i Github secrets.
 
 ### Grønn kjøring
 https://github.com/kriss917/eksamen-2026-main/actions/runs/41628522441
@@ -47,41 +47,73 @@ https://github.com/kriss917/eksamen-2026-main/actions/runs/41628522441
 ### Tagging strategi
 
 Hvert image får to tagger:
-- **Full commit-SHA**: gjør hvert image unikt og sportbart, så man vet nøyaktig hvilken kode som kjører og kan rulle tilbake til en bestemt versjon.
+- **Full commit-SHA**: gjør hvert image unikt og sporbart, så man vet nøyaktig hvilken kode som kjører og kan rulle tilbake til en bestemt versjon.
 - **Latest**: er bare en praktisk peker til det siste bygget, og vil flytte seg for hvert bygg, så kan ikke brukes alene til å se hva som kjøres.
 
 ## Oppgave 2A
 
-All terraform kode ligger i infra/
-Offentlig URL: https://wi-b503ad24c6c24e6a8ed8d06391673903.ecs.eu-west-1.on.aws
-Test med:
+All terraform kode ligger i `infra/`.
+
+**Offentlig URL**: https://wi-b503ad24c6c24e6a8ed8d06391673903.ecs.eu-west-1.on.aws
+
+### Test
+
+```bash
 curl https://wi-b503ad24c6c24e6a8ed8d06391673903.ecs.eu-west-1.on.aws/actuator/health
 curl -F "image=@samples/sample_image.png" https://wi-b503ad24c6c24e6a8ed8d06391673903.ecs.eu-west-1.on.aws/api/analyze
-Jeg brukte execution role og infrastructure role som står i oppgaven.
-Jeg lagde Task role med suffiks for kandidatnummer, og ga den kun tillatelsene den trenger:
- - s3: skrive, lese og liste fra min bucket.
- - Rekognition: DetectLabels -> Be om labels fra et bilde.
- - Bedrock: InvokeModel -> sende prompt til model og InvokeModelWithResponseStream -> sende prompt til model og få respons i en stream.
- - CloudWatch: PutMetricData -> sender metrikken fra Micrometer.
-Jeg lagde wishifai-10-images til bildene og har "force_destroy=true" så "terraform destroy" funker selv om det er bilder i bucketen.
-S3_BUCKET: settes i terraform automatisk fra "aws_s3_bucket.images.bucket"
-Jeg har variabler for region, candidate_number og image_tag som foreslås i oppgaven pluss ecr_repository og rollene som er ferdige.
-Jeg har outputs for service_url, bucket_name, task_role_arn, service_arn og ingress_paths.
+```
+
+### Ressurser
+
+- **ECS Express** som kjører imaget fra ECR. 
+- **S3-bucket** `wishifai-10-images` for opplastede bilder. `force_destroy = true` er satt
+  slik at `terraform destroy` fungerer selv med bilder i bucketen. Det er et bevisst valg for
+  eksamen, og ville ikke vært riktig for en bucket med ekte brukerbilder i produksjon.
+- **Task role** `wishifai-task-role-10` er opprettet i terraform.
+- **Execution role og infrastructure role** er de eksisterende rollene fra oppgaven, referert
+  via variabler og ikke opprettet på nytt.
+
+### Task role-tillatelser 
+
+- **s3**: `PutObject`, `GetObject`, `ListBucketskrive` -> skrive, lese og liste fra min bucket.
+- **Rekognition**: `DetectLabels` -> Be om labels fra et bilde.
+- **Bedrock**: `InvokeModel` -> sende prompt til model og `InvokeModelWithResponseStream` -> sende prompt til modellen og få respons i en stream.
+- **CloudWatch**: `PutMetricData` -> sender metrikken fra Micrometer.
+
+Bedrock og CloudWatch er ikke begrenset til bestemte ressurser, og kunne(burde) vært strammet in, men har prioritert at det faktisk funker.
+
+### Variabler og outputs
+
+- **Variabler:** `region`, `candidate_number`, `image_tag`, `ecr_repository`,
+  `execution_role_arn`, `infrastructure_role_arn`. `image_tag` har ingen default med vilje og settes av CI.
+- **S3_BUCKET:** settes automatisk fra `aws_s3_bucket.images.bucket`, og er ikke hardkodet.
+- **Outputs:** `service_url`, `bucket_name`, `task_role_arn`, `service_arn`,
+  `ingress_paths` og `dashboard_name` (Oppgave 3).
 
 ## Oppgave 2B
 
-Backend config ligger i "providers.tf" og pekker på pgr301-terraform-state som det står i oppgaven, og jeg bruker filnavn med mitt kandidat nummer -> key = "wishifai/10/terraform.tfstate" 
+State lagres i S3-bucketen `pgr301-terraform-state` med nøkkelen
+`wishifai/10/terraform.tfstate`. Nøkkelen inneholder mitt kandidatnummer,
+så state er unikt.
 
 ## Oppgave 2C
 
- - Grønn kjøring:
+Workflowen har begge jobbene i samme fil. `terraform` har `needs: build_and_push`, og kjører
+`fmt -check`, `init`, `validate` og `apply` mot `infra/`. AWS-nøklene kommer fra GitHub Secrets.
+SHA-taggen fra build-jobben sendes til Terraform som `image_tag`.
+
+### Grønn kjøring
 https://github.com/kriss917/eksamen-2026-main/actions/runs/42222226874
- - Rød kjøring grunnet formatering:
+
+### Rød kjøring grunnet formatering
 https://github.com/kriss917/eksamen-2026-main/actions/runs/42221680367
+
 Den feiler ved formateringsfeil siden jeg har "run: terraform fmt -check -recursive".
 Ved endringer i tf filer kjør "terraform fmt -recursive" så er formateringen på plass.
-Hvorfor terraform etter build:
-Terraform refererer til et image med en bestemt tag i ECR, som ikke finnes før build har pushet imaget. Hvis terraform kjørte før eller samtidig kunne ECS prøvd å hente et image som ikke finnes enda, og deploy ville feilet eller startet med et gammelt image. needs: build_and_push gjør at den kun kjøres hvis buildet var vellykket.
+
+### Hvorfor terraform etter build
+
+Terraform refererer til et image med en bestemt tag i ECR, som ikke finnes før build har pushet imaget. Hvis terraform kjørte før eller samtidig kunne ECS prøvd å hente et image som ikke finnes enda, og deploy ville feilet eller startet med et gammelt image. `needs: build_and_push` gjør at den kun kjøres hvis buildet var vellykket.
 
 ## Oppgave 3A
 

@@ -27,9 +27,11 @@ public class WishlistService {
         String s3Key = s3.upload(bytes, filename, contentType);
         List<String> labels = rekognition.detectLabels(bytes);
         GiftAnalysis analysis = bedrock.suggestGifts(labels);
-        registry.counter("wishifai.images.analyzed").increment();
-        int count = analysis.suggestions() == null ? 0 : analysis.suggestions().size();
-        registry.counter("wishifai.gifts.suggested").increment(count);
+         if (!"(ukjent)".equals(analysis.roomAnalysis())) {
+            registry.counter("wishifai.images.analyzed").increment();
+            int count = analysis.suggestions() == null ? 0 : analysis.suggestions().size();
+            registry.counter("wishifai.gifts.suggested").increment(count);
+        }
         return new AnalyzeResponse(
                 s3Key,
                 labels,
