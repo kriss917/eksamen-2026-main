@@ -75,7 +75,7 @@ curl -F "image=@samples/sample_image.png" https://wi-b503ad24c6c24e6a8ed8d063916
 
 ### Task role-tillatelser 
 
-- **s3**: `PutObject`, `GetObject`, `ListBucketskrive` -> skrive, lese og liste fra min bucket.
+- **s3**: `PutObject`, `GetObject`, `ListBucket` -> skrive, lese og liste fra min bucket.
 - **Rekognition**: `DetectLabels` -> Be om labels fra et bilde.
 - **Bedrock**: `InvokeModel` -> sende prompt til model og `InvokeModelWithResponseStream` -> sende prompt til modellen og få respons i en stream.
 - **CloudWatch**: `PutMetricData` -> sender metrikken fra Micrometer.
@@ -133,13 +133,13 @@ Metrikker sendes til CloudWatch med Micrometer under namespace `wishifai-10`.
 ### Hvorfor disse metrikkene
 
 - **Timere rundt Rekognition og Bedrock:** De to eksterne kallene er de mest sannsynlige årsakene til treg respons. Jeg måler bare selve AWS-kallet, slik at tallene viser hvor tiden går.
-- **Business-metrikker:** `images.analyzed` viser bruk, og `gifts.suggested` viser levert verdi. Forholdet mellom dem sier også noe om hvor mange forslag hver analyse gir.
+- **Business-metrikker:** `images.analyzed` viser bruk, og `gifts.suggested` viser levert verdi.
 - **`parse.failures`:** Den fanger en feil som ellers er usynlig. Når modellen ikke svarer med gyldig JSON,returnerer `parseAnalysis` fallback-verdien `(ukjent)`, og brukeren får et svar uten at HTTP-status eller feilrate ser noe galt.
 
 ### Kjent feil
 
-En respons som ikke er JSON feiler inne i `parseAnalysis`. Kommer det en tom respons derimot feiler vi før, `.content().get(0)` gir en feil som ikke plukkes opp og gir bruker 500 og ingen feil registrert i Cloudwatch.
- 
+En respons som ikke er JSON feiler inne i `parseAnalysis`. Kommer det en tom respons derimot feiler vi før, `.content().get(0)` gir en feil som ikke plukkes opp og gir bruker 500 og ingen feil registrert i mine metrikker.
+
 ## Oppgave 3B
 
 Dashboard: wishifai-10 (CloudWatch), er i infra/monitoring.tf. Screenshot ligger i media mappen -> media/dashboard.png.

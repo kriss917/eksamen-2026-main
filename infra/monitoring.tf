@@ -148,3 +148,16 @@ resource "aws_cloudwatch_metric_alarm" "bedrock_parse_failures" {
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
 }
+
+resource "aws_cloudwatch_metric_alarm" "bedrock_slow" {
+  alarm_name          = "${local.name}-bedrock-slow"
+  alarm_description   = "Gjennomsnittlig Bedrock-kall tar over 20 sekunder"
+  namespace           = local.metric_namespace
+  metric_name         = "wishifai.bedrock.duration.avg"
+  statistic           = "Average"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 20
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+}
